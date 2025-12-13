@@ -1,0 +1,213 @@
+import cv2
+import json
+import base64
+import asyncio
+import time
+import logging
+from concurrent.futures import ThreadPoolExecutor
+import os
+import sys
+import numpy as np
+
+# Add <project_root>/src to Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from src.local_models.inference import model_fn,input_fn,output_fn,predict_fn
+
+# from src.store_s3.shoplifting_store import upload_to_s3
+# from src.database.shoplifting_query import insert_shoplifting_frame
+from multiprocessing import Process, Queue
+
+from PIL import Image
+
+logger = logging.getLogger("FR detection")
+logger.setLevel(logging.INFO)
+
+MODEL_DIR=r"modelweight"
+
+
+
+# =====================================================
+# HELPERS
+# =====================================================
+def encode_frame_to_base64(frame):
+    _, buffer = cv2.imencode('.jpg', frame)
+    return base64.b64encode(buffer).decode('utf-8')
+
+
+def decode_base64_to_frame(b64_string):
+    img_bytes = base64.b64decode(b64_string)
+    img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+    return cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+
+# =====================================================
+# REAL-TIME INFERENCE CALL
+# =====================================================
+def call_inference_api(model,org_id,cam_id,frame):
+    """Simulate REST API call"""
+    request_payload = {
+        "org_id": org_id,
+        "cam_id": cam_id,
+        "encoding": encode_frame_to_base64(frame)
+    }
+
+    parsed_input = input_fn(json.dumps(request_payload), content_type="application/json")
+    prediction = predict_fn(parsed_input, model)
+    response_json = output_fn(prediction, accept="application/json")
+
+    return json.loads(response_json)
+
+
+
+
+# ---------------------------------------------------------
+# MULTIPROCESSING STORAGE WORKER
+# ---------------------------------------------------------
+
+# def run_storage_worker(q, client_id):
+#     """
+#     Runs in a SEPARATE PROCESS.
+#     Handles S3 upload + DB insert.
+#     """
+
+#     logger.info(f"[{client_id}] Storage worker started.")
+
+#     while True:
+#         item = q.get()
+
+#         # Sentinel: exit
+#         if item is None:
+#             break
+
+#         frame_id, annotated_frame, detections = item
+
+#         try:
+#             # Upload to S3
+#             s3_url = upload_to_s3(annotated_frame, frame_id)
+
+#             # DB insert
+#             insert_shoplifting_frame(detections, s3_url)
+
+#             logger.info(f"[{client_id}] Stored frame {frame_id}")
+
+#         except Exception as e:
+#             logger.error(f"[{client_id}] Error storing frame {frame_id}: {e}")
+
+#     logger.info(f"[{client_id}] Storage worker exiting...")
+
+    
+
+def run_FR_detection(client_id: str, video_url: str, camera_id: int, user_id: int, org_id: int, sessions: dict, loop: asyncio.AbstractEventLoop, storage_executor: ThreadPoolExecutor):
+    """
+    Runs GUN detection in a separate thread.
+    Sends WebSocket messages safely and stores frames to S3/DB in background threads to avoid blocking inference.
+    """
+    cap = cv2.VideoCapture(video_url)
+    frame_num = 0
+    # ---------------------------------------------------------
+    # START MULTIPROCESS STORAGE WORKER
+    # ---------------------------------------------------------
+    store_queue = Queue(maxsize=1000)
+
+    # storage_process = Process(
+    #     target=run_storage_worker,
+    #     args=(store_queue, client_id),
+    #     daemon=True
+    # )
+    # storage_process.start()
+    
+    model = model_fn(MODEL_DIR)
+    
+
+    while cap.isOpened() and sessions.get(client_id, {}).get("streaming", False):
+        ret, frame = cap.read()
+        if not ret:
+            # No more frames
+            break
+
+        frame_num += 1
+        try:
+            # ---------------- FR inference ----------------
+
+            response = call_inference_api(model,org_id,user_id, frame)
+            
+            # ts = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+            payload = {}
+
+            ws = sessions[client_id]["ws"]
+
+            if response and response.get('annotated_frame'):
+                # success, buffer = cv2.imencode(".jpg", result.get('annotated_frame'))
+                # if not success:
+                #     continue
+
+                # clean_result = dict(result)
+                # clean_result.pop("annotated_frame", None)
+
+                payload = {
+                   "detections": response,
+                   
+                }
+            # ---------------- WebSocket send ----------------
+            
+                if payload:
+                    asyncio.run_coroutine_threadsafe(
+                        ws.send_text(json.dumps(payload)),
+                        loop
+                    )
+                else:
+                    asyncio.run_coroutine_threadsafe(
+                        ws.send_text(json.dumps({"error":"error in frame proecssing"})),
+                        loop
+                    )
+                    break
+
+            #     #------------------ STORE EVERY 20th FRAME -----------------
+            #     annotated_frame=result.get('annotated_frame')
+            #     if result["alerts"]:
+
+            #         if annotated_frame is not None:
+            #             # JSON COPY to avoid race condition
+            #             safe_copy = json.loads(json.dumps(result))
+
+            #             try:
+            #                 store_queue.put_nowait(
+            #                     (frame_num, annotated_frame, safe_copy)
+            #                 )
+            #             except:
+            #                 logger.warning(
+            #                     f"[{client_id}] Storage queue full; frame {frame_num} dropped."
+            #                 )
+
+            # else:
+            #     if ws:
+            #         asyncio.run_coroutine_threadsafe(
+            #             ws.send_text(json.dumps({"success": False, "message": "error"})),
+            #             loop
+            #         )
+            #     logger.warning(f"[{client_id}] Frame {frame_num}: No detections - error")
+            #     break
+
+
+        except Exception as e:
+            print(f"[{client_id}] Frame {frame_num} error -> {e}")
+
+    cap.release()
+
+    # #STOP STORAGE PROCESS
+    # store_queue.put(None)
+    # storage_process.join(timeout=5)
+    
+    if client_id in sessions:
+        sessions[client_id]["streaming"] = False
+
+    logger.info(f"[{client_id}] FR Detection stopped and resources released")
+
+
+
+
+
+
+
+
+
