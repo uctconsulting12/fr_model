@@ -6,7 +6,7 @@ import boto3
 import logging
 from PIL import Image
 
-S3_BUCKET = "shoplifting-detections"
+S3_BUCKET = "fr-detections"
 s3 = boto3.client("s3")
 
 logger = logging.getLogger("s3_utils_shoplifting")
@@ -42,7 +42,7 @@ def upload_to_s3(frame, frame_num):
         if not success:
             raise RuntimeError(f"Frame {frame_num}: cv2.imencode failed")
 
-        key = f"shoplifting-results/frame_{frame_num}_{int(time.time())}.jpg"
+        key = f"fr-results/frame_{frame_num}_{int(time.time())}.jpg"
         s3.put_object(
             Bucket=S3_BUCKET,
             Key=key,

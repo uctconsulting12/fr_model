@@ -13,8 +13,8 @@ import numpy as np
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from src.local_models.inference import model_fn,input_fn,output_fn,predict_fn
 
-# from src.store_s3.shoplifting_store import upload_to_s3
-# from src.database.shoplifting_query import insert_shoplifting_frame
+from src.store_s3.fr_store import upload_to_s3
+from src.database.fr_query import insert_data
 from multiprocessing import Process, Queue
 
 from PIL import Image
@@ -64,36 +64,36 @@ def call_inference_api(model,org_id,cam_id,frame):
 # MULTIPROCESSING STORAGE WORKER
 # ---------------------------------------------------------
 
-# def run_storage_worker(q, client_id):
-#     """
-#     Runs in a SEPARATE PROCESS.
-#     Handles S3 upload + DB insert.
-#     """
+def run_storage_worker(q, client_id):
+    """
+    Runs in a SEPARATE PROCESS.
+    Handles S3 upload + DB insert.
+    """
 
-#     logger.info(f"[{client_id}] Storage worker started.")
+    logger.info(f"[{client_id}] Storage worker started.")
 
-#     while True:
-#         item = q.get()
+    while True:
+        item = q.get()
 
-#         # Sentinel: exit
-#         if item is None:
-#             break
+        # Sentinel: exit
+        if item is None:
+            break
 
-#         frame_id, annotated_frame, detections = item
+        frame_id, annotated_frame, detections = item
 
-#         try:
-#             # Upload to S3
-#             s3_url = upload_to_s3(annotated_frame, frame_id)
+        try:
+            # Upload to S3
+            s3_url = upload_to_s3(annotated_frame, frame_id)
 
-#             # DB insert
-#             insert_shoplifting_frame(detections, s3_url)
+            # DB insert
+            insert_data(detections, s3_url)
 
-#             logger.info(f"[{client_id}] Stored frame {frame_id}")
+            logger.info(f"[{client_id}] Stored frame {frame_id}")
 
-#         except Exception as e:
-#             logger.error(f"[{client_id}] Error storing frame {frame_id}: {e}")
+        except Exception as e:
+            logger.error(f"[{client_id}] Error storing frame {frame_id}: {e}")
 
-#     logger.info(f"[{client_id}] Storage worker exiting...")
+    logger.info(f"[{client_id}] Storage worker exiting...")
 
     
 
@@ -109,12 +109,12 @@ def run_FR_detection(client_id: str, video_url: str, camera_id: int, user_id: in
     # ---------------------------------------------------------
     store_queue = Queue(maxsize=1000)
 
-    # storage_process = Process(
-    #     target=run_storage_worker,
-    #     args=(store_queue, client_id),
-    #     daemon=True
-    # )
-    # storage_process.start()
+    storage_process = Process(
+        target=run_storage_worker,
+        args=(store_queue, client_id),
+        daemon=True
+    )
+    storage_process.start()
     
     model = model_fn(MODEL_DIR)
     
@@ -129,23 +129,18 @@ def run_FR_detection(client_id: str, video_url: str, camera_id: int, user_id: in
         try:
             # ---------------- FR inference ----------------
 
-            response = call_inference_api(model,org_id,user_id, frame)
+            result = call_inference_api(model,org_id,user_id, frame)
             
             # ts = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
             payload = {}
 
             ws = sessions[client_id]["ws"]
 
-            if response and response.get('annotated_frame'):
-                # success, buffer = cv2.imencode(".jpg", result.get('annotated_frame'))
-                # if not success:
-                #     continue
-
-                # clean_result = dict(result)
-                # clean_result.pop("annotated_frame", None)
+            if result and result.get('annotated_frame'):
+                
 
                 payload = {
-                   "detections": response,
+                   "detections": result,
                    
                 }
             # ---------------- WebSocket send ----------------
@@ -162,31 +157,31 @@ def run_FR_detection(client_id: str, video_url: str, camera_id: int, user_id: in
                     )
                     break
 
-            #     #------------------ STORE EVERY 20th FRAME -----------------
-            #     annotated_frame=result.get('annotated_frame')
-            #     if result["alerts"]:
+                #------------------ STORE EVERY 20th FRAME -----------------
+                annotated_frame=result.get('annotated_frame')
+                if frame_num%20==0:
 
-            #         if annotated_frame is not None:
-            #             # JSON COPY to avoid race condition
-            #             safe_copy = json.loads(json.dumps(result))
+                    if annotated_frame is not None:
+                        # JSON COPY to avoid race condition
+                        safe_copy = json.loads(json.dumps(result))
 
-            #             try:
-            #                 store_queue.put_nowait(
-            #                     (frame_num, annotated_frame, safe_copy)
-            #                 )
-            #             except:
-            #                 logger.warning(
-            #                     f"[{client_id}] Storage queue full; frame {frame_num} dropped."
-            #                 )
+                        try:
+                            store_queue.put_nowait(
+                                (frame_num, annotated_frame, safe_copy)
+                            )
+                        except:
+                            logger.warning(
+                                f"[{client_id}] Storage queue full; frame {frame_num} dropped."
+                            )
 
-            # else:
-            #     if ws:
-            #         asyncio.run_coroutine_threadsafe(
-            #             ws.send_text(json.dumps({"success": False, "message": "error"})),
-            #             loop
-            #         )
-            #     logger.warning(f"[{client_id}] Frame {frame_num}: No detections - error")
-            #     break
+            else:
+                if ws:
+                    asyncio.run_coroutine_threadsafe(
+                        ws.send_text(json.dumps({"success": False, "message": "error"})),
+                        loop
+                    )
+                logger.warning(f"[{client_id}] Frame {frame_num}: No detections - error")
+                break
 
 
         except Exception as e:
@@ -194,9 +189,9 @@ def run_FR_detection(client_id: str, video_url: str, camera_id: int, user_id: in
 
     cap.release()
 
-    # #STOP STORAGE PROCESS
-    # store_queue.put(None)
-    # storage_process.join(timeout=5)
+    #STOP STORAGE PROCESS
+    store_queue.put(None)
+    storage_process.join(timeout=5)
     
     if client_id in sessions:
         sessions[client_id]["streaming"] = False
