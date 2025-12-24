@@ -12,6 +12,7 @@ from src.websocket.add_employee import  register_face
 import os
 import shutil
 import uuid
+from typing import Optional, Dict, Any
 
 logger = logging.getLogger("face_registration")
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +69,7 @@ class EmployeeRegisterRequest(BaseModel):
 class RegisterResponse(BaseModel):
     success: bool
     message: str
+    data: Optional[Dict[str, Any]] = None
 
 
 
@@ -106,33 +108,28 @@ async def register_face_api(
         with open(temp_path, "wb") as f:
             shutil.copyfileobj(image.file, f)
 
-        # Prepare data
-        employee_data = {
-            "emp_id": emp_id,
-            "name": name,
-            "department": department,
-            "org_id": org_id,
-            "user_id": user_id,
-            "email": email,
-            "image_path": temp_path
-        }
+        
 
-        # Register face
-        success = register_face(employee_data)
-
-        if not success:
-            raise HTTPException(
-                status_code=400,
-                detail="Face registration failed"
-            )
-
-        return RegisterResponse(
-            success=True,
-            message="Face registered successfully"
+        result = register_face(
+            emp_id,
+            temp_path,
+            name,
+            department,
+            org_id,
+            user_id,
+            email=""
         )
 
-    except HTTPException:
-        raise
+        # Determine success
+        is_success = result.get("status") == "success"
+
+        return RegisterResponse(
+            success=is_success,
+            message=result.get("message", "Face registration failed"),
+            data=result if not is_success else None
+        )
+
+    
 
     except Exception as e:
         logger.exception("Face registration error")
