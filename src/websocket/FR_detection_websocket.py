@@ -129,7 +129,7 @@ def run_FR_detection(client_id: str, video_url: str, camera_id: int, user_id: in
         try:
             # ---------------- FR inference ----------------
 
-            result = call_inference_api(model,org_id,user_id, frame)
+            result = call_inference_api(model,org_id,camera_id, frame)
             
             # ts = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
             payload = {}

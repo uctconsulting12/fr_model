@@ -78,7 +78,7 @@ def insert_data(d,s3_url):
 
                 d["detections_count"],          # int
 
-                json.dumps(d["detections"])  ,   # 🔴 FULL detections[] stored as-is
+                json.dumps(d["detections"])  ,   #  FULL detections[] stored as-is
                 s3_url
             )
         )
