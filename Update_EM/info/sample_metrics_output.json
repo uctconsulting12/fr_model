@@ -1,0 +1,79 @@
+{
+  "timestamp": "2025-02-06T14:35:42Z",
+  "org_id": 1,
+  "cam_id": 1,
+  "workstations": {
+    "WS-01": {
+      "status": "ACTIVE",
+      "occupied": true,
+      "confidence": 0.87,
+      "time_active": 1234.56,
+      "time_vacant": 567.89,
+      "utilization_percent": 68.52,
+      "missing_count": 3,
+      "missing_duration": 45.2,
+      "first_seen": "09:15:23",
+      "last_seen": "14:32:11"
+    },
+    "WS-02": {
+      "status": "VACANT",
+      "occupied": false,
+      "confidence": 0.0,
+      "time_active": 890.12,
+      "time_vacant": 912.34,
+      "utilization_percent": 49.38,
+      "missing_count": 5,
+      "missing_duration": 123.45,
+      "first_seen": "09:20:45",
+      "last_seen": "13:15:30"
+    },
+    "WS-03": {
+      "status": "ACTIVE",
+      "occupied": true,
+      "confidence": 0.92,
+      "time_active": 2145.67,
+      "time_vacant": 234.11,
+      "utilization_percent": 90.16,
+      "missing_count": 2,
+      "missing_duration": 34.5,
+      "first_seen": "09:00:12",
+      "last_seen": "14:35:40"
+    },
+    "Desk-A": {
+      "status": "VACANT",
+      "occupied": false,
+      "confidence": 0.0,
+      "time_active": 456.78,
+      "time_vacant": 1543.22,
+      "utilization_percent": 22.84,
+      "missing_count": 8,
+      "missing_duration": 567.89,
+      "first_seen": "10:30:00",
+      "last_seen": "12:45:33"
+    },
+    "Desk-B": {
+      "status": "ACTIVE",
+      "occupied": true,
+      "confidence": 0.79,
+      "time_active": 1678.9,
+      "time_vacant": 321.1,
+      "utilization_percent": 83.94,
+      "missing_count": 4,
+      "missing_duration": 89.12,
+      "first_seen": "08:45:00",
+      "last_seen": "14:35:39"
+    },
+    "Desk-C": {
+      "status": "VACANT",
+      "occupied": false,
+      "confidence": 0.0,
+      "time_active": 0.0,
+      "time_vacant": 2000.0,
+      "utilization_percent": 0.0,
+      "missing_count": 0,
+      "missing_duration": 0.0,
+      "first_seen": null,
+      "last_seen": null
+    }
+  }
+}
